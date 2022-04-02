@@ -16,7 +16,7 @@ constexpr float PI = 3.14159265359f;
 class WaveDsp {
  public:
   WaveDsp(int windowOrder, int strideOrder, int fftOrder, int nsinc,
-          int imageHeight);
+          int bins);
   ~WaveDsp() {
     // TODO: delete plan
   }
@@ -27,6 +27,8 @@ class WaveDsp {
 
   // assuming data_size >= window_size
   void window(float *data);
+
+  void interpolate(float *output, const float *data, float sr, float lowfreq = 20, float highfreq = 20000, float epsilon = 1e-6);
 private:
   void init_window();
 
@@ -38,7 +40,7 @@ private:
   int fftOrder;
   int fftSize = 1 << fftOrder;
   int nsinc;
-  int imageHeight;
+  int bins;
 
   std::vector<fftwf_complex> fft_buffer = std::vector<fftwf_complex>(fftSize/2 + 1);
   std::vector<float> window_data = std::vector<float>(window_size);

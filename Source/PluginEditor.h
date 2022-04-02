@@ -45,33 +45,33 @@ public:
 
     void pushNextSampleIntoFifo (float sample) noexcept {
         // if the fifo contains enough data, set a flag to say
-        // that the next line should now be rendered..
-        if (fifoIndex % strideSize == 0)
-        {
-            // TODO: use a queue to prevent lost
-            if (! nextFFTBlockReady)
-            {
-				const auto t0 = std::chrono::high_resolution_clock::now();
-                logFs << t0.time_since_epoch().count() << " Time begin block" << std::endl;
+// that the next line should now be rendered..
+if (fifoIndex % strideSize == 0)
+{
+    // TODO: use a queue to prevent lost
+    if (!nextFFTBlockReady)
+    {
+        const auto t0 = std::chrono::high_resolution_clock::now();
+        logFs << t0.time_since_epoch().count() << " Time begin block" << std::endl;
 
-                juce::zeromem (fftData, sizeof (fftData));
-                int fftStart = (fftSize - windowSize) / 2;
-                std::copy(&fifo[fifoIndex], &fftData[windowSize], &fftData[fftStart]);
-                std::copy(&fifo[0], &fftData[fifoIndex], &fftData[fftStart + windowSize - fifoIndex]);
-                window.multiplyWithWindowingTable(&fftData[fftStart], windowSize);
+        juce::zeromem(fftData, sizeof(fftData));
+        int fftStart = (fftSize - windowSize) / 2;
+        std::copy(&fifo[fifoIndex], &fftData[windowSize], &fftData[fftStart]);
+        std::copy(&fifo[0], &fftData[fifoIndex], &fftData[fftStart + windowSize - fifoIndex]);
+        window.multiplyWithWindowingTable(&fftData[fftStart], windowSize);
 
-				const auto t1 = std::chrono::high_resolution_clock::now();
-                logFs << t1.time_since_epoch().count() << " Time end block" << std::endl;
-                nextFFTBlockReady = true;
-            }
+        const auto t1 = std::chrono::high_resolution_clock::now();
+        logFs << t1.time_since_epoch().count() << " Time end block" << std::endl;
+        nextFFTBlockReady = true;
+    }
 
-            if (fifoIndex == windowSize) {
-                fifoIndex = 0;
-            }
-        }
+    if (fifoIndex == windowSize) {
+        fifoIndex = 0;
+    }
+}
 
-		fifo[fifoIndex++] = sample;
-	}
+fifo[fifoIndex++] = sample;
+    }
 
 #define PI 3.141592654f
     void drawNextLineOfSpectrogram() {
@@ -79,46 +79,23 @@ public:
             return;
         }
 
-        float mindb = -40.0f;
-        float maxdb = 0.0f;
         float lowfreq = 20.0f;
         float highfreq = 20000.0f;
         float k = log2(highfreq / lowfreq);
 
         const auto t0 = std::chrono::high_resolution_clock::now();
 
-        forwardFFT.performFrequencyOnlyForwardTransform (fftData);
         dsp->forward(fftData);
 
-        //logFs << t1.time_since_epoch().count() <<  " Time FFTForward: " << 1000 * (std::chrono::duration<float>(t1 - t0).count()) << "ms" << std::endl;
-        for (auto y = 0; y < imageHeight; ++y)
-        {
-            auto freq = lowfreq * pow(2, k * y / imageHeight);
-            double fftIndexReal = freq / sr * fftSize;
-            float v = 0;
-			int fftIndexL = int(fftIndexReal);
-			int fftIndexR = fftIndexL + 1;
-            // linear interpolation
-            for (int m = fftIndexL - (nsinc / 2 - 1); m <= fftIndexR + (nsinc / 2 - 1); m++) {
-                if (0 <= m && m < fftSize/2) {
-                    float z = fftIndexReal - m;
-                    if (abs(z) < epsilon) {
-                        v += fftData[m];
-                    }
-                    else {
-						v += fftData[m] * sin(z * PI) / (z * PI);
-                    }
-                }
-            }
-            fftDataBins[y] = v/2;
-        }
+        dsp->interpolate(fftDataBins, fftData, sr);
 
         const auto t1 = std::chrono::high_resolution_clock::now();
         float maxdb1 = -100;
+        float maxdbF = 0;
         for (int y = 0; y < imageHeight; ++y) {
             auto freq = lowfreq * pow(2, k * y / imageHeight);
             auto v = fftDataBins[y];
-            auto w = juce::jmap(v/2, 0.0f, (float)windowSize, 0.0f, 1.0f);
+            auto w = juce::jmap(v / 2, 0.0f, (float)windowSize, 0.0f, (float)fftSize);
 
             // -3dB slope
             //w *= pow(10, -3/10*log2(freq / sqrt(20*20000)));
@@ -127,23 +104,46 @@ public:
             float db = 10.0f * log10f(w);
             if (db > maxdb1) {
                 maxdb1 = db;
+                maxdbF = freq;
             }
             db = juce::jlimit(mindb, maxdb, db);
             float unify = juce::jmap(db, mindb, maxdb, 0.0f, 1.0f);
-            fftDataLog2[y] = unify;
+            fftDataLog2[y] = w;//unify;
         }
-		logFs << "maxdb " << maxdb1 << std::endl;
+        logFs << "maxdb at " << maxdbF << "Hz, " << maxdb1 << "dB" << std::endl;
 
-		fftDataTmp[0] = fftDataTmp[imageHeight - 1] = 0;
+        // find peaks
+        std::fill(&fftDataTmp[0], &fftDataTmp[imageHeight], 0.0f);
         bool found = false;
+        bool rising = false;
         for (int y = 1; y < imageHeight - 1; y++) {
-            if (fftDataLog2[y] - fftDataLog2[y - 1] > epsilon && fftDataLog2[y] - fftDataLog2[y + 1] > epsilon) {
-                fftDataTmp[y] = 1;
-                found = true;
-                //logFs << y << ",";
+            const auto prev = fftDataLog2[y - 1];
+            const auto next = fftDataLog2[y + 1];
+            const auto curr = fftDataLog2[y];
+
+            if (curr - prev > epsilon) {
+                // rising
+                stack.clear();
+                rising = true;
+                stack.push_back(y);
+            }
+			else if (abs(prev - curr) <= epsilon) {
+                // leveling
+                stack.push_back(y);
             }
             else {
-                fftDataTmp[y] = 0;
+                // falling
+                if (rising) {
+					while (!stack.empty()) {
+						auto index = stack.back();
+						fftDataTmp[index] = 1;
+						stack.pop_back();
+					}
+                }
+                else {
+                    stack.clear();
+                }
+                rising = false;
             }
         }
 		if (found) {
@@ -152,7 +152,7 @@ public:
         }
         for (int y = 1; y < imageHeight - 1; y++) {
             //fftDataLog2[y] = fftDataLog2[y] / 2 + fftDataTmp[y] / 2;
-            fftDataLog2[y] = fftDataLog2[y] *fftDataTmp[y];
+            //fftDataLog2[y] = (fftDataLog2[y] * fftDataTmp[y]) * 0.7 + fftDataLog2[y] * 0.3;
 			fftDataLog2[y] = juce::jlimit(0.0f, 1.0f, fftDataLog2[y]);
         }
 
@@ -246,20 +246,23 @@ public:
 
     enum
     {
-        nsinc = 32,
+        nsinc = 2,
 
         strideOrder = 6,
         strideSize = 1 << strideOrder,
 
-        windowOrder = 12,
+        windowOrder = 11,
         windowSize = 1 << windowOrder,
 
-        fftOrder = 14,
+        fftOrder = 16,
         fftSize  = 1 << fftOrder,
 
-        imageWidth = 384,
-        imageHeight = 4096,
+        imageWidth = 512,
+        imageHeight = 2048,
+
     };
+    const float maxdb = -10;
+    const float mindb = -58;
     juce::dsp::FFT forwardFFT;
     std::vector<uint32_t> edgeImage = std::vector<uint32_t>(imageHeight, 0);
     bool edgeImageHasData = false;
@@ -268,10 +271,11 @@ public:
     float fftData [2 * fftSize];
     float fftDataBins [imageHeight];
     float fftDataLog2[imageHeight];
-    float fftDataTmp[imageHeight];
+    float fftDataTmp[imageHeight] = { 0 };
+    std::vector<size_t> stack;
     int fifoIndex = 0;
     bool nextFFTBlockReady = false;
-    juce::dsp::WindowingFunction<float> window = juce::dsp::WindowingFunction<float>(windowSize, juce::dsp::WindowingFunction<float>::WindowingMethod::hann);
+    juce::dsp::WindowingFunction<float> window = juce::dsp::WindowingFunction<float>(windowSize, juce::dsp::WindowingFunction<float>::WindowingMethod::blackmanHarris);
 
     juce::OpenGLContext openGLContext;
     GLuint textureID = 0;

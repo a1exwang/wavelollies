@@ -19,7 +19,7 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
     forwardFFT (fftOrder)
 {
 	using namespace juce::gl;
-	setSize(512, 768);
+	setSize(512, 740);
 
 	setOpaque(true);
 	openGLContext.setRenderer(this);
@@ -27,6 +27,8 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
 	openGLContext.attachTo(*this);
 
 	startTimerHz(60);
+
+	stack.reserve(imageHeight);
 }
 
 NewProjectAudioProcessorEditor::~NewProjectAudioProcessorEditor()
