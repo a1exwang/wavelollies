@@ -18,14 +18,21 @@ def apply_filter(x, program_or_args):
         list(map(str, args)),
         input=s.encode("utf-8"),
     )
-    return np.array(list(map(float, output_bytes.decode("utf-8").strip().split("\n"))), dtype='float32')
+    lines = output_bytes.decode("utf-8")
+    try:
+        ret = np.array(list(map(float, lines.strip().split("\n"))), dtype='float32')
+        return ret
+    except Exception as e:
+        # print(lines)
+        print(e)
 
 def array_diff(output, expected, epsilon = 1e-6):
-    diff = np.max(np.abs(output - expected))
+    diff = np.max(np.abs((output - expected)) / expected)
+    # stddev = np.sqrt(np.sum((output - expected) ** 2) / len(output))
+    print("max deviation = %g, threshold = %g" % (diff, epsilon))
     if diff > epsilon:
-        print("deviation(%g) exceed %g" % (diff, epsilon))
         print("index  output  expected diff")
         for i, (x, y) in enumerate(zip(output, expected)):
-            print("% 6d  %-12g %-12g %-12g" % (i, x, y, np.abs(x-y)))
+            print("% 6d  %-14.10f %-14.10f % 8.3fdB" % (i, x, y, 10*np.log10(np.abs(x-y))))
     else:
         print("passed")

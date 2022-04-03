@@ -27,8 +27,6 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
 	openGLContext.attachTo(*this);
 
 	startTimerHz(60);
-
-	stack.reserve(imageHeight);
 }
 
 NewProjectAudioProcessorEditor::~NewProjectAudioProcessorEditor()

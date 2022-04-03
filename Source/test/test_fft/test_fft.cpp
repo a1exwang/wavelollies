@@ -29,6 +29,6 @@ int main() {
   dsp->forward(data.data());
 
   for (int i = 0; i < fftSize / 2; i++) {
-    std::cout << data[i] << std::endl;
+    std::cout << std::fixed << std::setprecision(13) << data[i] << std::endl;
   }
 }
