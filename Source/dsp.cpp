@@ -70,6 +70,13 @@ WaveDsp::WaveDsp(int windowOrder, int strideOrder, int fftOrder, int nsinc,
   init_window();
 }
 
+int WaveDsp::freq2bin(float freq) {
+  return log2f(freq / minfreq) / octs * bins;
+}
+float WaveDsp::bin2freq(int bin) {
+  return minfreq * powf(2, octs * bin / bins);
+}
+
 void WaveDsp::forward(float *data) {
   pfftwf_execute_dft_r2c(plan_, data, fft_buffer.data());
 
@@ -91,6 +98,15 @@ void WaveDsp::scale(float *data, size_t size, float factor) {
   }
 }
 
+float blackman_harris(int i, int window_size) {
+  int N = window_size - 1;
+  if (window_size <= 1) {
+      return 1;
+  }
+  float a0 = 0.35875f, a1 = 0.48829f, a2 = 0.14128f, a3 = 0.01168f;
+  return a0 - a1 * cosf(2 * PI * i / N) + a2 * cosf(4 * PI * i / N) - a3 * cosf(6 * PI * i / N);
+}
+
 void WaveDsp::init_window() {
   const auto N = window_size;
 
@@ -102,8 +118,7 @@ void WaveDsp::init_window() {
 
   // blackman-harris window
   for (int i = 0; i < window_size; i++) {
-    float a0 = 0.35875f, a1 = 0.48829f, a2 = 0.14128f, a3 = 0.01168f;
-    window_data[i] = a0 - a1 * cosf(2*PI*i/N) + a2*cosf(4*PI*i/N) - a3*cosf(6*PI*i/N);
+    window_data[i] = blackman_harris(i, window_size);
   }
 
   // flat top window
@@ -164,76 +179,156 @@ void WaveDsp::clip(float *data, size_t size, float min, float max) {
   }
 }
 
-void WaveDsp::slope(float *data, size_t size, float db_per_oct, bool is_db) {
+void WaveDsp::slope(float *db_data, size_t size, float db_per_oct, bool is_db) {
   float lowfreq = 20;
   float hifreq = 20000;
   float anchor = sqrt(lowfreq * hifreq);
 
-  float k = log2(hifreq / lowfreq);
   for (int i = 0; i < size; i++) {
-    auto freq = lowfreq * pow(2, k * i / bins);
+    auto freq = lowfreq * pow(2, octs * i / bins);
     float db = log2(freq / anchor) * db_per_oct;
 
     if (is_db) {
-      data[i] += db;
+      db_data[i] += db;
     } else {
-      data[i] *= pow(10, db / 10);
+      db_data[i] *= pow(10, db / 10);
     }
   }
 }
 
+
 void WaveDsp::find_peak(float *output, const float *input, float slope) {
-  std::fill(output, &output[bins], 0.0f);
-  const float epsilon = slope * log2(20000 / 20) / bins;
-  // std::cerr << "epsilon " << epsilon << std::endl;
+  std::fill(peaks.begin(), peaks.end(), (size_t)0);
+  // slope are in db/oct
+  const float oct_per_point = log2f(20000 / 20) / bins;
+  const float db_per_point = slope * oct_per_point;
+  const float ratio_threshold = powf(10, db_per_point/10);
   bool found = false;
-  bool rising = false;
+  bool is_rising = false;
   for (int i = 1; i < bins; i++) {
     const auto prev = input[i - 1];
     const auto curr = input[i];
 
-    // std::cerr << "curr " << i << " " << curr << std::endl;
+    bool cur_rise = false, cur_fall = false;
 
-    if (curr - prev > epsilon) {
+    if (prev == 0) {
+      if (curr > 0) {
+        cur_rise = true;
+      } else if (curr < 0) {
+        cur_fall = true;
+      }
+    } else {
+      const auto r = curr / prev;
+      if (r > ratio_threshold) {
+        cur_rise = true;
+      } else if (r < 1 / ratio_threshold) {
+        cur_fall = true;
+      }
+    }
+    // std::cerr << "find_peak " << i << " " << std::fixed << std::setprecision(13)
+    //           << curr << " "
+    //           << (cur_rise ? "rise" : (cur_fall ? "fall" : "level")) << " "
+    //           << stack.size() << " " << (stack.size() == 1 ? int(stack[0]) : -1) << " "
+    //           << (is_rising
+    //               ? "is_rising"
+    //               : "")
+    //           << std::endl;
+
+    if (cur_rise) {
       // rising
       stack.clear();
-      rising = true;
       stack.push_back(i);
-      // std::cerr << "rise" << std::endl;
-    } else if (fabsf(prev - curr) <= epsilon) {
+      is_rising = true;
+    } else if (cur_fall) {
+      // falling
+      if (is_rising) {
+        for (auto index : stack) {
+          peaks[index] = 1;
+        }
+      }
+      stack.clear();
+      is_rising = false;
+    } else {
       // level
       stack.push_back(i);
-      // std::cerr << "level" << std::endl;
-    } else {
-      // falling
-      // std::cerr << "fall" << std::endl;
-      if (rising) {
-        while (!stack.empty()) {
-          auto index = stack.back();
-          output[index] = 1;
-          stack.pop_back();
-        }
-      } else {
-        stack.clear();
-      }
-      rising = false;
     }
   }
 
-  if (rising) {
+  if (is_rising) {
     while (!stack.empty()) {
       auto index = stack.back();
-      output[index] = 1;
+      peaks[index] = 1;
       stack.pop_back();
     }
   }
+
+  // calculate window
+
+  int wsize = 1;
+  std::fill(output, output + bins, 0.0f);
+  for (int i = 0; i < bins; i++) {
+    if (peaks[i] > 0) {
+      for (int j = 0; j < wsize; j++) {
+        int k = i - wsize/2 + j;
+        if (k >= 0 && k < bins) {
+          output[k] = 1;
+        }
+      }
+    }
+  }
+  for (int i = 0; i < bins; i++) {
+    if (peaks[i] > 0) {
+      for (int j = 0; j < wsize; j++) {
+        int k = i - wsize/2 + j;
+        if (k >= 0 && k < bins) {
+          output[k] *= 0.5+0.5*blackman_harris(j, wsize);
+        }
+      }
+    }
+  }
+
+  // mix level
+  for (int i = 0; i < bins; i++) {
+    // crossfade between output[i] and 1
+    output[i] = (peaks_mix * output[i]) + ((1-peaks_mix) * 1);
+  }
 }
+void WaveDsp::add(float *output, const float *lhs, const float *rhs, size_t size) {
+  for (int i = 0; i < size; i++) {
+    output[i] = lhs[i] + rhs[i];
+  }
+}
+
 void WaveDsp::multiply(float *output, const float *input, size_t size) {
   for (int i = 0; i < size; i++) {
     output[i] *= input[i];
   }
 }
-void WaveDsp::e2e(float *output, float *input, float sr) {
+
+void WaveDsp::freq_split(float *low, float *hi, const float *input) {
+  // bandwidth in octs
+  float bandwidth = bandwidth_octs * bins / octs;
+  int split_index = freq2bin(split_frequency);
+
+  int low_passband_index = split_index - bandwidth / 2;
+  int hi_passband_index = split_index + bandwidth / 2;
+
+  for (int i = 0; i < bins; i++) {
+    if (i < low_passband_index) {
+      low[i] = input[i];
+      hi[i] = 0;
+    } else if (low_passband_index <= i && i < hi_passband_index) {
+      float hi_mix = float(i - low_passband_index) / bandwidth;
+      low[i] = input[i] * (1.0f - hi_mix);
+      hi[i] = input[i] * hi_mix;
+    } else {
+      low[i] = 0;
+      hi[i] = input[i];
+    }
+  }
+}
+
+void WaveDsp::e2e(float *output, float *input, float sr, bool pitch_tracking) {
   window(input);
 
   std::fill(fft_data.begin(), fft_data.end(), 0.0f);
@@ -246,10 +341,16 @@ void WaveDsp::e2e(float *output, float *input, float sr) {
 
   interpolate(bins_data.data(), fft_data.data(), sr);
 
-  std::vector<float> peaks(bins);
-  find_peak(peaks.data(), bins_data.data(), 0.001f);
+  freq_split(lo_data.data(), hi_data.data(), bins_data.data());
 
-  multiply(bins_data.data(), peaks.data(), bins);
+  // for low frequency content: find peak because it can increase visual frequency resolution
+  // for high frequency there is no need to find peaks
+  find_peak(peaks_factor.data(), lo_data.data(), 0);
+  if (pitch_tracking) {
+    multiply(lo_data.data(), peaks_factor.data(), bins);
+  }
+
+  add(bins_data.data(), lo_data.data(), hi_data.data(), bins);
 
   db(bins_data.data(), bins_data.size());
 
@@ -258,6 +359,7 @@ void WaveDsp::e2e(float *output, float *input, float sr) {
   clip(bins_data.data(), bins_data.size(), mindb, maxdb);
 
   std::copy(bins_data.begin(), bins_data.end(), output);
+  // std::copy(fft_data.begin(), fft_data.begin() + std::min(bins, fft_size), output);
 }
 
 std::string WaveDsp::dump_param() const {

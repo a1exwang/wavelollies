@@ -20,6 +20,8 @@ using namespace juce::gl;
 /**
 */
 constexpr float epsilon = 1e-9;
+const float freqMeterTicks[] = { 50.0f, 125.0f, 250.0f, 500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f, 16000.0f };
+
 class NewProjectAudioProcessorEditor  : public juce::AudioProcessorEditor, private juce::Timer, public juce::OpenGLRenderer
 {
 public:
@@ -27,9 +29,96 @@ public:
     NewProjectAudioProcessorEditor (NewProjectAudioProcessor&);
     ~NewProjectAudioProcessorEditor() override;
 
+	static float midiFreq(int midiValue) {
+		return 440 * powf(2, (midiValue - 69) / 12.0f);
+	}
+	static std::string keyName(int midiValue) {
+		static std::string names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+		return names[midiValue % 12] + std::to_string(midiValue / 12 - 1);
+	}
+
+
     void resized() override;
     void paint (juce::Graphics& g) override
     {
+        float minfreq = 20, maxfreq = 20000;
+        float widthFreqText = 30;
+        float heightFreqText = 20;
+        float widthFreqTick = 12;
+        float lineWidthFreqTick = 2;
+
+        auto height = getHeight();
+        auto width = getWidth();
+        // frequency meter bg
+        g.setColour(juce::Colours::grey);
+        // float totalWidthLeft = pianoKeysStartX + widthKey;
+        g.fillRect(0, 0, 85, height);
+
+        for (int i = 0; i < sizeof(freqMeterTicks) / sizeof(freqMeterTicks[0]); i++) {
+            auto f = freqMeterTicks[i];
+            int index = log2f(f/ minfreq) / log2f(maxfreq / minfreq) * height;
+            int y = height - index - 1;
+            g.setColour(juce::Colours::blue);
+            g.drawLine(0 + widthFreqText, y, 0 + widthFreqText + widthFreqTick, y, lineWidthFreqTick);
+
+            g.setColour(juce::Colours::blue);
+            g.setOpacity(0.2);
+            g.drawLine(widthFreqText + widthFreqTick, y, width, y, lineWidthFreqTick);
+            std::stringstream ss;
+            if (f >= 1000) {
+                ss << int(f / 1000.0) << "k";
+            }
+            else {
+                ss << int(f);
+            }
+            g.setColour(juce::Colours::blue);
+            g.setOpacity(1);
+            g.setFont(8);
+            g.drawText(ss.str(), 0, y - heightFreqText/2, widthFreqText-2, heightFreqText, juce::Justification::centredRight, false);
+        }
+
+        // piano keys
+        auto pianoKeysStartX = widthFreqText + widthFreqTick;
+        float widthKeyName = 20;
+        float widthKey = 40;
+        float widthBlackKey = 20;
+        float heightKey = height / log2f(maxfreq / minfreq) / 7 - 2;
+        for (int k = 0; k < 2; k++) {
+			for (int i = 20; i < 132; i++) {
+				auto name = keyName(i);
+				if (name.size() == 3) {
+					// black keys
+                    if (k == 1) {
+                        auto c_freq = midiFreq(i / 12 * 12);
+                        auto key_i = i % 12;
+                        auto x = key_i / 2;
+                        auto freqpos = c_freq* powf(2, x / 7.0f);
+						int index = log2f(freqpos/ minfreq) / log2f(maxfreq / minfreq) * height;
+				        int y = height - index - 1;
+                        g.setColour(juce::Colours::black);
+					    g.fillRect(pianoKeysStartX, y - heightKey / 2  - heightKey/2, widthBlackKey, heightKey);
+                    }
+				}
+				else {
+					// white keys
+                    if (k == 0) {
+                        auto c_freq = midiFreq(i / 12 * 12);
+                        auto key_i = i % 12;
+                        auto x = (key_i <= 4) ? (key_i / 2) : (key_i / 2 + 1);
+                        auto freqpos = c_freq* powf(2, x / 7.0f);
+						int index = log2f(freqpos/ minfreq) / log2f(maxfreq / minfreq) * height;
+				        int y = height - index - 1;
+                        g.setColour(juce::Colours::white);
+					    g.fillRect(pianoKeysStartX, y - heightKey / 2, widthKey, heightKey);
+						if (i % 12 == 0) {
+							g.setColour(juce::Colours::blueviolet);
+							g.drawText(name, pianoKeysStartX+20, y - heightKey / 2, widthKeyName, heightKey, juce::Justification::centredRight, false);
+						}
+                    }
+				}
+			}
+        }
+
     }
 
     void timerCallback() override
@@ -45,32 +134,32 @@ public:
 
     void pushNextSampleIntoFifo (float sample) noexcept {
         // if the fifo contains enough data, set a flag to say
-// that the next line should now be rendered..
-if (fifoIndex % strideSize == 0)
-{
-    // TODO: use a queue to prevent lost
-    if (!nextFFTBlockReady)
-    {
-        const auto t0 = std::chrono::high_resolution_clock::now();
-        logFs << t0.time_since_epoch().count() << " Time begin block" << std::endl;
+		// that the next line should now be rendered..
+		if (fifoIndex % strideSize == 0)
+		{
+			// TODO: use a queue to prevent lost
+			if (!nextFFTBlockReady)
+			{
+				const auto t0 = std::chrono::high_resolution_clock::now();
+				logFs << t0.time_since_epoch().count() << " Time begin block" << std::endl;
 
-        juce::zeromem(fftData, sizeof(fftData));
-        int fftStart = (fftSize - windowSize) / 2;
-        std::copy(&fifo[fifoIndex], &fftData[windowSize], fftData);
-        std::copy(&fifo[0], &fftData[fifoIndex], &fftData[windowSize - fifoIndex]);
+				juce::zeromem(fftData, sizeof(fftData));
+				int fftStart = (fftSize - windowSize) / 2;
+				std::copy(&fifo[fifoIndex], &fftData[windowSize], fftData);
+				std::copy(&fifo[0], &fftData[fifoIndex], &fftData[windowSize - fifoIndex]);
 
-        const auto t1 = std::chrono::high_resolution_clock::now();
-        logFs << t1.time_since_epoch().count() << " Time end block" << std::endl;
-        nextFFTBlockReady = true;
-    }
+				const auto t1 = std::chrono::high_resolution_clock::now();
+				logFs << t1.time_since_epoch().count() << " Time end block" << std::endl;
+				nextFFTBlockReady = true;
+			}
 
-    if (fifoIndex == windowSize) {
-        fifoIndex = 0;
-    }
-}
+			if (fifoIndex == windowSize) {
+				fifoIndex = 0;
+			}
+		}
 
-fifo[fifoIndex++] = sample;
-    }
+		fifo[fifoIndex++] = sample;
+	}
 
 #define PI 3.141592654f
     void drawNextLineOfSpectrogram() {
@@ -83,7 +172,7 @@ fifo[fifoIndex++] = sample;
             //fftDataTest[i] = sinf(2 * PI * 128 * i / sr);
         }
         logFs << "dump_param: \n" << dsp->dump_param() << std::endl;
-        dsp->e2e(bins_data, fftData, sr);
+        dsp->e2e(bins_data, fftData, sr, true);
         /* {
             std::ofstream test("L:\\test.log");
             for (int i = 0; i < imageHeight; i++) {
@@ -181,7 +270,7 @@ fifo[fifoIndex++] = sample;
 
     enum
     {
-        strideOrder = 1,
+        strideOrder = 8,
         strideSize = 1 << strideOrder,
 
         windowOrder = 11,
@@ -192,8 +281,8 @@ fifo[fifoIndex++] = sample;
 
         nsinc = 128,
 
-        imageWidth = 512,
-        imageHeight = 2048,
+        imageWidth = 256,
+        imageHeight = 1200,
 
     };
     const float maxdb = 0;

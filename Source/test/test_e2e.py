@@ -1,4 +1,4 @@
-from .utils import apply_filter, array_diff, give_me_a_periodic_signal
+from .utils import apply_filter, array_diff, exe, give_me_a_periodic_signal
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,15 +14,15 @@ mindb = -96
 maxdb = 0
 
 N = 2 ** window_order
-f = 128
+f = 64
 
 ts = np.arange(N)
-signal = (scipy.signal.sawtooth(2 * np.pi * f * ts / sr) + scipy.signal.sawtooth(2 * np.pi * 440 * ts / sr)) / 2
-# signal = np.sin(2 * np.pi * f * ts / sr)
+# signal = (scipy.signal.sawtooth(2 * np.pi * f * ts / sr) + scipy.signal.sawtooth(2 * np.pi * 440 * ts / sr)) / 2
+signal = np.sin(2 * np.pi * f * ts / sr)
 
-executable = "./buildwin/Debug/test_e2e.exe" if sys.platform == "win32"  else './build/test_e2e'
-output = apply_filter(signal, [executable, sr, stride_order, fft_order, bins, nsinc, mindb, maxdb])
+output = apply_filter(signal, [exe("test_e2e"), sr, stride_order, window_order, fft_order, bins, nsinc, mindb, maxdb, "true"])
 
 # print('\n'.join(map(str, output)))
+print(output)
 plt.plot(output[:bins])
 plt.savefig("data.png")

@@ -1,4 +1,4 @@
-#include "../../dsp.h"
+#include "../dsp.h"
 
 #include <cassert>
 #include <cmath>
@@ -9,7 +9,10 @@
 #include <iostream>
 #include <memory>
 
-int main() {
+int main(int argc, char **argv) {
+  float sr = atof(argv[1]);
+  int bins = atoi(argv[2]);
+    
   float v;
   std::vector<float> data;
   while (std::cin >> v) {
@@ -21,14 +24,12 @@ int main() {
   assert(fftSize == data.size());
   std::cerr << "input size " << data.size() << ", fft order " << fft_order << std::endl;
 
-  auto dsp = std::make_unique<WaveDsp>(10, 6, fft_order, 64, 512);
+  auto dsp = std::make_unique<WaveDsp>(10, 6, fft_order, 32, bins);
 
-  float sr = 44100;
-  float f = 440;
+  std::vector<float> image_col(bins);
+  dsp->interpolate(image_col.data(), data.data(), sr);
 
-  dsp->forward(data.data());
-
-  for (int i = 0; i < fftSize / 2; i++) {
-    std::cout << std::fixed << std::setprecision(13) << data[i] << std::endl;
+  for (int i = 0; i < bins; i++) {
+    std::cout << image_col[i] << std::endl;
   }
 }

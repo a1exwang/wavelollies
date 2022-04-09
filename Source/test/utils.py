@@ -1,5 +1,6 @@
-import numpy as np
 import subprocess
+import sys
+import numpy as np
 import scipy.signal
 
 def give_me_a_periodic_signal(N):
@@ -36,3 +37,16 @@ def array_diff(output, expected, epsilon = 1e-6):
             print("% 6d  %-14.10f %-14.10f % 8.3fdB" % (i, x, y, 10*np.log10(np.abs(x-y))))
     else:
         print("passed")
+
+def exe(case_name):
+    if sys.platform == "win32":
+        executable = "./buildwin/Debug/%s.exe" % case_name
+    else:
+        executable = './build/%s' % case_name
+    return executable
+        
+def format_frequency(f):
+    if f < 1000:
+        return "%d" % f
+    else:
+        return "%.1fk" % (f/1000)
