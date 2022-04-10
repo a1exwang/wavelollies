@@ -14,30 +14,30 @@
 std::fstream logFs("L:\\wavelolly.log", std::ios::out);
 
 //==============================================================================
-NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioProcessor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p),
-    forwardFFT (fftOrder)
-{
-	using namespace juce::gl;
-	setSize(512, 740);
+MainAudioProcessorEditor::MainAudioProcessorEditor (NewProjectAudioProcessor& p)
+    : AudioProcessorEditor (&p), audioProcessor (p), spectrogramComponentL(true), spectrogramComponentR(false), spectrogramSeparator(juce::Colours::grey) {
+	setSize(1024, 740);
+    setResizable(true, true);
+    setResizeLimits(256, 256, 1048576, 1048576);
 
-	setOpaque(true);
-	openGLContext.setRenderer(this);
-	openGLContext.setContinuousRepainting(false);
-	openGLContext.attachTo(*this);
-
-	startTimerHz(60);
+    addAndMakeVisible(spectrogramComponentL);
+    spectrogramComponentL.addMouseListener(this, false);
+    addAndMakeVisible(spectrogramComponentR);
+    spectrogramComponentR.addMouseListener(this, false);
 }
 
-NewProjectAudioProcessorEditor::~NewProjectAudioProcessorEditor()
+MainAudioProcessorEditor::~MainAudioProcessorEditor()
 {
-	openGLContext.detach();
 }
 
 
-void NewProjectAudioProcessorEditor::resized()
+void MainAudioProcessorEditor::resized()
 {
-    // This is generally where you'll want to lay out the positions of any
-    // subcomponents in your editor..
+    auto bounds = getLocalBounds();
+    auto sepWidth = 10;
+    auto specWidth = (bounds.getWidth() - sepWidth) / 2;
+    spectrogramComponentL.setBounds(bounds.removeFromLeft(specWidth));
+    spectrogramSeparator.setBounds(bounds.removeFromLeft(sepWidth));
+    spectrogramComponentR.setBounds(bounds);
 }
 

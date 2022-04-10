@@ -48,11 +48,12 @@ int main(int argc, char **argv) {
   std::cerr << dsp->dump_param() << std::endl;
 
   std::vector<float> bins_data(bins);
+  std::vector<float> peaks_data(bins);
   for (int i = 0; i < (data.size() / window_size); i++) {
     std::cerr << "before block " << i << std::endl;
-    dsp->e2e(bins_data.data(), &data.data()[window_size * i], sr, pitch_tracking);
+    dsp->e2e(bins_data.data(), peaks_data.data(), &data.data()[window_size * i], sr, pitch_tracking);
     for (int i = 0; i < bins; i++) {
-      std::cout << std::fixed << std::setprecision(13) << bins_data[i] << std::endl;
+      std::cout << std::fixed << std::setprecision(13) << ((bins_data[i] + peaks_data[i]) / 2) << std::endl;
     }
   }
 }

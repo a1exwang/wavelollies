@@ -51,7 +51,9 @@ class WaveDsp {
 
   // input size = window_size
   // output size = bins
-  void e2e(float *output, float *input, float sr, bool pitch_tracking);
+  void e2e(float *output, float *peaks, float *input, float sr, bool pitch_tracking);
+
+  void amp2db(float* input, size_t size);
 
   int freq2bin(float freq);
   float bin2freq(int bin);
@@ -71,8 +73,10 @@ class WaveDsp {
 
   float mindb, maxdb;
   float minfreq = 20, maxfreq = 20000;
-  float peaks_mix = (1.0f-0.01f);
+  // 1.0 for only peaks, 0 for only spectrogram
+  float peaks_mix = 1.0f;
   float bandwidth_octs = 2.0f;
+  // frequency below this will show peaks
   float split_frequency = 20000.0f;
 
   float octs = log2f(maxfreq / minfreq);
@@ -89,6 +93,7 @@ class WaveDsp {
   std::vector<float> lo_data = std::vector<float>(bins);
   std::vector<float> hi_data = std::vector<float>(bins);
   std::vector<float> bins_data = std::vector<float>(bins);
+  std::vector<float> peaks_data = std::vector<float>(bins);
 
   // fftw
   fftwf_plan (*pfftwf_plan_dft_r2c_1d)(int n, float *in, fftwf_complex *out,

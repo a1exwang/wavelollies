@@ -95,7 +95,7 @@ void NewProjectAudioProcessor::prepareToPlay (double sampleRate, int samplesPerB
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
-	auto* editor = static_cast<NewProjectAudioProcessorEditor*>(getActiveEditor());
+	auto* editor = static_cast<MainAudioProcessorEditor*>(getActiveEditor());
     if (editor) {
         editor->sr = sampleRate;
     }
@@ -164,16 +164,17 @@ void NewProjectAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
 	if (totalNumInputChannels > 0)
 	{
-		auto* editor = static_cast<NewProjectAudioProcessorEditor*>(getActiveEditor());
-		const auto* channelData = buffer.getReadPointer(0);
+		auto* editor = static_cast<MainAudioProcessorEditor*>(getActiveEditor());
+		const auto* L= buffer.getReadPointer(0);
+		const auto* R= buffer.getReadPointer(0);
 
         if (editor) {
             for (auto i = 0; i < buffer.getNumSamples(); ++i) {
-				editor->pushNextSampleIntoFifo(channelData[i]);
-                float f = fmod(t / getSampleRate() * 300, 20000);
-				float v = 0.5 * sinf(2 * PI * f * t / getSampleRate());
+				editor->pushNextSampleIntoFifo((L[i] + R[i]) / 2);
+                //float f = fmod(t / getSampleRate() * 300, 20000);
+				//float v = 0.5 * sinf(2 * PI * f * t / getSampleRate());
 				//editor->pushNextSampleIntoFifo(v);
-                t++;
+                //t++;
             }
         }
 	}
@@ -187,7 +188,7 @@ bool NewProjectAudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* NewProjectAudioProcessor::createEditor()
 {
-    return new NewProjectAudioProcessorEditor (*this);
+    return new MainAudioProcessorEditor (*this);
 }
 
 //==============================================================================

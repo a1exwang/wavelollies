@@ -327,8 +327,13 @@ void WaveDsp::freq_split(float *low, float *hi, const float *input) {
     }
   }
 }
+void WaveDsp::amp2db(float* input, size_t size) {
+  db(input, size);
+  slope(input, size, -3, true);
+  clip(input, size, mindb, maxdb);
+ }
 
-void WaveDsp::e2e(float *output, float *input, float sr, bool pitch_tracking) {
+void WaveDsp::e2e(float *output, float *peaks_output, float *input, float sr, bool pitch_tracking) {
   window(input);
 
   std::fill(fft_data.begin(), fft_data.end(), 0.0f);
@@ -343,6 +348,9 @@ void WaveDsp::e2e(float *output, float *input, float sr, bool pitch_tracking) {
 
   freq_split(lo_data.data(), hi_data.data(), bins_data.data());
 
+  amp2db(bins_data.data(), bins_data.size());
+  std::copy(bins_data.begin(), bins_data.end(), output);
+
   // for low frequency content: find peak because it can increase visual frequency resolution
   // for high frequency there is no need to find peaks
   find_peak(peaks_factor.data(), lo_data.data(), 0);
@@ -350,16 +358,9 @@ void WaveDsp::e2e(float *output, float *input, float sr, bool pitch_tracking) {
     multiply(lo_data.data(), peaks_factor.data(), bins);
   }
 
-  add(bins_data.data(), lo_data.data(), hi_data.data(), bins);
-
-  db(bins_data.data(), bins_data.size());
-
-  slope(bins_data.data(), bins_data.size(), -3, true);
-
-  clip(bins_data.data(), bins_data.size(), mindb, maxdb);
-
-  std::copy(bins_data.begin(), bins_data.end(), output);
-  // std::copy(fft_data.begin(), fft_data.begin() + std::min(bins, fft_size), output);
+  add(peaks_output, lo_data.data(), hi_data.data(), bins);
+  amp2db(peaks_output, bins);
+  std::copy(peaks_output, peaks_output + bins, output);
 }
 
 std::string WaveDsp::dump_param() const {
